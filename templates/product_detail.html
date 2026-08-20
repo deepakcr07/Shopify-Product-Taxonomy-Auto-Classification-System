@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product.name }} - Product Detail{% endblock %}
+
+{% block content %}
+<div style="max-width:1000px; margin:0 auto;">
+
+  <div style="margin-bottom:1.25rem;">
+    <a href="/products/" class="btn btn-sm btn-secondary">← Back to Catalogue</a>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div style="display:flex; gap:1.5rem; flex-wrap:wrap;">
+      {% if product.image_url %}
+        <img src="{{ product.image_url }}" style="width:160px; height:160px; border-radius:var(--radius-lg); object-fit:cover; border:1px solid var(--border-color);" alt="{{ product.product_number }}"/>
+      {% else %}
+        <div class="prod-thumb-placeholder" style="width:160px; height:160px; font-size:1rem;">NO IMAGE</div>
+      {% endif %}
+
+      <div style="flex:1;">
+        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.4rem;">
+          <span class="badge badge-info">{{ product.product_number }}</span>
+          {% if product.brand %}
+            <span class="badge badge-secondary">Brand: {{ product.brand }}</span>
+          {% endif %}
+          <span class="badge {% if classification.image_status == 'available' %}badge-success{% elif classification.image_status == 'broken' %}badge-danger{% else %}badge-secondary{% endif %}">
+            Image: {{ classification.get_image_status_display }}
+          </span>
+        </div>
+        <h1 style="font-size:1.5rem; font-weight:700; color:#fff; margin:0.3rem 0;">{{ product.name }}</h1>
+        <div style="color:var(--text-muted); font-size:0.9rem;">
+          Source: <strong>{{ product.product_category }}</strong> › <strong>{{ product.product_sub_category }}</strong>
+        </div>
+        {% if product.msrp %}
+          <div style="margin-top:0.5rem; font-size:0.9rem; color:#a7f3d0;">
+            MSRP: <strong>${{ product.msrp }}</strong> {% if product.item_cost %}| Cost: ${{ product.item_cost }}{% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Classification Details -->
+  {% if classification %}
+  <div class="card" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title">Shopify Taxonomy Classification</h2>
+      <div style="display:flex; gap:0.5rem;">
+        <span class="badge {% if classification.status == 'approved' %}badge-success{% elif classification.status == 'auto_classified' %}badge-info{% elif classification.status == 'needs_review' %}badge-warning{% else %}badge-secondary{% endif %}">
+          {{ classification.get_status_display }}
+        </span>
+        {% if classification.approved_category %}
+          <span class="badge badge-success">Human Verified</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="background:rgba(0,0,0,0.25); padding:1rem; border-radius:var(--radius-md); margin-bottom:1.25rem;">
+      <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase;">
+        {{ classification.approved_category|yesno:"Approved Category,Predicted Category" }}
+      </div>
+      <div style="font-size:1.15rem; font-weight:700; color:#fff; margin:0.2rem 0;">
+        {{ classification.effective_category_name }}
+      </div>
+      <div class="cat-breadcrumb">
+        {% for b in classification.effective_category.get_breadcrumbs %}
+          <span class="cat-node {% if forloop.last %}leaf{% endif %}">{{ b }}</span>
+          {% if not forloop.last %}<span class="cat-separator">›</span>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:0.75rem 1rem; border-radius:var(--radius-md); margin-bottom:1.5rem;">
+      <span style="color:var(--text-muted); font-size:0.9rem;">Confidence Score</span>
+      <span style="font-size:1.25rem; font-weight:800; color:#fff;">{{ classification.confidence_percent }}%</span>
+    </div>
+
+    <!-- Extracted Attributes -->
+    <h3 style="font-size:0.95rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.75rem;">Extracted Attributes (Normalized)</h3>
+    <div class="attr-grid">
+      {% for k, v in classification.extracted_attributes.items %}
+        <div class="attr-card">
+          <div class="attr-name">{{ k }} <span class="attr-norm-badge">Normalized</span></div>
+          <div class="attr-val">{{ v.normalized|default:v }}</div>
+          {% if v.raw and v.raw != v.normalized %}
+            <div class="attr-raw-tag">Raw: {{ v.raw }}</div>
+          {% endif %}
+        </div>
+      {% empty %}
+        <div style="color:var(--text-dim); font-size:0.85rem;">No attributes detected</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Raw Metadata -->
+  <div class="card" style="margin-bottom:1.5rem;">
+    <h3 class="card-title">Catalogue Raw Data & Bullets</h3>
+    <p style="color:#d1d5db; font-size:0.9rem; line-height:1.7; margin:0.75rem 0;">
+      {{ product.description|default:"No description" }}
+    </p>
+    {% if product.bullets %}
+      <div style="background:rgba(0,0,0,0.25); padding:0.75rem; border-radius:var(--radius-md); margin-top:0.75rem; font-size:0.85rem; color:#a7f3d0;">
+        {{ product.bullets|linebreaks }}
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

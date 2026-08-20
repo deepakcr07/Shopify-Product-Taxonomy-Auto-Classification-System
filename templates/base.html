@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Shopify Product Taxonomy Classifier{% endblock %}</title>
+  
+  <!-- Modern Typography & Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/static/css/styles.css">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="navbar">
+    <a href="/" class="brand-logo">
+      <div class="brand-icon">⚡</div>
+      <span>Shopify Taxonomy Classifier</span>
+    </a>
+
+    <ul class="nav-links">
+      <li><a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">📊 Dashboard</a></li>
+      <li><a href="/products/" class="nav-link {% if '/products/' in request.path %}active{% endif %}">📦 Products & Review</a></li>
+    </ul>
+
+    <div class="nav-actions">
+      <button class="btn btn-secondary btn-sm" id="btn-open-upload">⬆ Import Catalogue (.xlsx / .csv)</button>
+      <a href="/api/v1/export/?format=csv" class="btn btn-primary btn-sm">⬇ Export CSV</a>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Global Slide-Over Drawer for Reviewing Products -->
+  <div class="drawer-overlay" id="drawer-overlay" onclick="closeProductDrawer()"></div>
+  <aside class="drawer" id="product-drawer">
+    <div class="drawer-header">
+      <h3 style="font-size: 1.15rem; font-weight:700; color:#fff;">Product Classification Review</h3>
+      <button class="close-btn" onclick="closeProductDrawer()">&times;</button>
+    </div>
+    <div id="drawer-content">
+      <!-- Dynamically filled by JS -->
+    </div>
+  </aside>
+
+  <!-- Global Catalogue Upload Modal -->
+  <div class="modal" id="upload-modal">
+    <div class="modal-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem;">
+        <h3 style="font-size:1.2rem; font-weight:700; color:#fff;">Import Product Catalogue</h3>
+        <button class="close-btn" id="btn-close-upload">&times;</button>
+      </div>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.5rem;">
+        Upload an Excel (<code>.xlsx</code> / <code>.xls</code>) or CSV file (e.g. <code>Product List.xlsx</code>). The products will be imported and queued for batch classification.
+      </p>
+
+      <form id="upload-form">
+        <div class="form-group">
+          <label class="form-label">Select File (.xlsx / .csv)</label>
+          <input type="file" id="upload-file-input" class="form-control" accept=".xlsx,.xls,.csv" required/>
+        </div>
+        <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('upload-modal').classList.remove('active')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Import Products</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- JavaScript Engine -->
+  <script src="/static/js/app.js"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

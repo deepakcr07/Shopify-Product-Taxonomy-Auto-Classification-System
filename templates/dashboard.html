@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Shopify Product Taxonomy Classifier{% endblock %}
+
+{% block content %}
+<div id="dashboard-metrics">
+
+  <!-- Top Header Bar -->
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; flex-wrap:wrap; gap:1rem;">
+    <div>
+      <h1 style="font-size:1.75rem; font-weight:800; color:#fff; letter-spacing:-0.02em;">Shopify Product Taxonomy Classifier</h1>
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.25rem;">
+        Automated classification system with attribute extraction, explainable confidence scoring, and review workflows for 10,000+ products.
+      </p>
+    </div>
+
+    <!-- Batch Control Action Buttons -->
+    <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+      <button class="btn btn-primary" id="btn-start-batch">
+        ▶ Start Batch Classification
+      </button>
+      <button class="btn btn-secondary" id="btn-pause-batch" style="display:none;">
+        ⏸ Pause Job
+      </button>
+      <button class="btn btn-primary" id="btn-resume-batch" style="display:none;">
+        ▶ Resume Pending Items
+      </button>
+      <button class="btn btn-danger btn-sm" id="btn-retry-batch" style="display:none;">
+        ↻ Retry Failed Items
+      </button>
+    </div>
+  </div>
+
+  <!-- Live Batch Worker Progress Banner -->
+  <div class="card" style="margin-bottom:1.5rem; background: linear-gradient(135deg, rgba(17,24,39,0.95), rgba(30,27,75,0.4)); border-color: rgba(99,102,241,0.3);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+      <div style="display:flex; align-items:center; gap:0.6rem;">
+        <span style="font-weight:700; color:#fff; font-size:1rem;">⚡ Batch Classification Engine</span>
+        <span class="badge badge-secondary" id="job-status-badge">IDLE</span>
+        <span id="job-type-badge" class="badge badge-info" style="display:none;">FULL RUN</span>
+      </div>
+      <div style="display:flex; gap:1.25rem; font-size:0.85rem; color:var(--text-muted);">
+        <span>Duration: <strong style="color:#fff;" id="job-duration">0s</strong></span>
+        <span>Throughput: <strong style="color:#a7f3d0;" id="job-throughput">0 items/sec</strong></span>
+      </div>
+    </div>
+
+    <div class="progress-container" style="margin-bottom:0.75rem;">
+      <div class="progress-fill" id="job-progress-fill" style="width: 0%;"></div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-dim); flex-wrap:wrap; gap:0.5rem;">
+      <span id="job-processed-stat">0 / {{ total_products }} items (0/0 chunks)</span>
+      <span style="font-weight:700; color:#fff;" id="job-progress-text">0.0%</span>
+    </div>
+  </div>
+
+  <!-- KPI Metrics Grid -->
+  <div class="kpi-grid">
+    <div class="kpi-card info">
+      <div class="kpi-label">
+        <span>Total Catalogue</span>
+        <span>📦</span>
+      </div>
+      <div class="kpi-value" id="kpi-total-products">{{ total_products|default:"0" }}</div>
+      <div class="kpi-sub">Unique canonical products</div>
+    </div>
+
+    <div class="kpi-card success">
+      <div class="kpi-label">
+        <span>Processed</span>
+        <span>⚡</span>
+      </div>
+      <div class="kpi-value" id="kpi-processed">0</div>
+      <div class="kpi-sub">Completed classifications</div>
+    </div>
+
+    <div class="kpi-card success">
+      <div class="kpi-label">
+        <span>Auto-Classified</span>
+        <span>✓</span>
+      </div>
+      <div class="kpi-value" id="kpi-auto-classified">0</div>
+      <div class="kpi-sub">High confidence (≥70%)</div>
+    </div>
+
+    <div class="kpi-card warning">
+      <div class="kpi-label">
+        <span>Needs Review</span>
+        <span>🔍</span>
+      </div>
+      <div class="kpi-value" id="kpi-needs-review">0</div>
+      <div class="kpi-sub">Low confidence (<70%)</div>
+    </div>
+
+    <div class="kpi-card danger">
+      <div class="kpi-label">
+        <span>Failed / Errors</span>
+        <span>⚠</span>
+      </div>
+      <div class="kpi-value" id="kpi-failed">0</div>
+      <div class="kpi-sub">Isolated item failures</div>
+    </div>
+
+    <div class="kpi-card info">
+      <div class="kpi-label">
+        <span>Avg Confidence</span>
+        <span>🎯</span>
+      </div>
+      <div class="kpi-value" id="kpi-avg-confidence">0%</div>
+      <div class="kpi-sub">Multi-modal score</div>
+    </div>
+  </div>
+
+  <!-- Classified Products Table Card -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Catalogue Classifications</h2>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <a href="/products/?status=needs_review" class="btn btn-sm btn-secondary">Review Queue (Low Confidence)</a>
+        <a href="/products/?status=failed" class="btn btn-sm btn-danger" id="link-failed-queue" style="display:none;">Failed Queue</a>
+        <a href="/products/" class="btn btn-sm btn-primary">View Full Catalogue →</a>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Image</th>
+            <th>Product Number</th>
+            <th>Product Name</th>
+            <th>Shopify Category Path</th>
+            <th>Confidence</th>
+            <th>Status</th>
+            <th style="text-align:right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="products-table-body">
+          <!-- Populated by JS -->
+          {% for res in recent_classifications %}
+          <tr onclick="openProductDrawer({{ res.product.id }})" style="cursor:pointer;">
+            <td>
+              {% if res.product.image_url %}
+                <img src="{{ res.product.image_url }}" class="prod-thumb" alt="{{ res.product.product_number }}" onerror="this.outerHTML='<div class=\'prod-thumb-placeholder\'>IMG</div>'"/>
+              {% else %}
+                <div class="prod-thumb-placeholder">NO IMG</div>
+              {% endif %}
+            </td>
+            <td>
+              <div style="font-weight:600; color:#fff;">{{ res.product.product_number }}</div>
+              <div style="font-size:0.8rem; color:var(--text-dim);">{{ res.product.model_number }}</div>
+            </td>
+            <td>
+              <div style="font-weight:500; max-width:320px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ res.product.name }}</div>
+              <div style="font-size:0.75rem; color:var(--text-muted);">{{ res.product.product_category }} › {{ res.product.product_sub_category }}</div>
+            </td>
+            <td>
+              <div style="font-size:0.85rem; color:#c7d2fe;">{{ res.effective_category_path|default:"Unclassified" }}</div>
+            </td>
+            <td>
+              <div class="confidence-meter">
+                <span style="font-weight:700; font-size:0.85rem;">{{ res.confidence_percent }}%</span>
+              </div>
+            </td>
+            <td>
+              <span class="badge {% if res.status == 'approved' %}badge-success{% elif res.status == 'auto_classified' %}badge-info{% elif res.status == 'needs_review' %}badge-warning{% else %}badge-secondary{% endif %}">
+                {{ res.get_status_display }}
+              </span>
+            </td>
+            <td style="text-align:right;" onclick="event.stopPropagation();">
+              <button class="btn btn-sm btn-secondary" onclick="openProductDrawer({{ res.product.id }})">Review / Edit</button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="7" style="text-align:center; padding:2rem; color:var(--text-muted);">
+              No products classified yet. Click <strong>"Start Batch Classification"</strong> above to begin!
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
