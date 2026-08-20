@@ -134,12 +134,11 @@ d:/Python_test_app/
 │   ├── urls.py
 │   ├── wsgi.py
 │   └── asgi.py
-├── templates/               # UI Templates (Dashboard, Products, Review, 15 Q&A)
+├── templates/               # UI Templates (Dashboard, Products, Product Detail)
 │   ├── base.html
 │   ├── dashboard.html
 │   ├── products.html
-│   ├── product_detail.html
-│   └── questions_answers.html
+│   └── product_detail.html
 ├── static/                  # CSS design system and JavaScript engine
 │   ├── css/styles.css
 │   └── js/app.js
@@ -237,13 +236,6 @@ python manage.py test
 ```
 
 Result: `13 tests run in 0.066s — OK (100% Pass)`
-
----
-
-## 💡 Candidate Questions & Technical Reference
-
-A dedicated interactive technical reference is available inside the application at:
-**[http://127.0.0.1:8000/interview-answers/](http://127.0.0.1:8000/interview-answers/)**
 
 ---
 

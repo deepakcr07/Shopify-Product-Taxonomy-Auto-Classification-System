@@ -9,7 +9,7 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-shopify-taxonomy-classifier-interview-secret-key-2026')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-shopify-taxonomy-auto-classification-system-key-2026')
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
@@ -67,7 +67,7 @@ WSGI_APPLICATION = 'shopify_classifier.wsgi.application'
 
 # Database Configuration
 # Defaults to MariaDB / MySQL as per backend requirement, easily fallback to SQLite if needed.
-DB_ENGINE = os.getenv('DB_ENGINE', 'mariadb').lower()
+DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').lower()
 
 if DB_ENGINE in ('mariadb', 'mysql'):
     DATABASES = {

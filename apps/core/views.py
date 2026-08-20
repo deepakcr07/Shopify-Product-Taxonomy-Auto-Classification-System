@@ -1,5 +1,5 @@
 """
-Django Web Views for Dashboard, Review Interface, and Interview Answers.
+Django Web Views for Dashboard and Review Interface.
 """
 from django.shortcuts import render, get_object_or_404
 from apps.products.models import Product, ClassificationResult
@@ -48,8 +48,3 @@ def product_detail_view(request, pk):
         'audit_logs': product.audit_logs.all()[:15],
     }
     return render(request, 'product_detail.html', context)
-
-
-def questions_answers_view(request):
-    """Renders the comprehensive interview assignment technical reference and candidate Q&A."""
-    return render(request, 'questions_answers.html')
