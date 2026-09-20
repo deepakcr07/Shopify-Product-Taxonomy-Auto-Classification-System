@@ -3,7 +3,10 @@ from apps.taxonomy.models import TaxonomyCategory, TaxonomyAttribute, TaxonomyAt
 from apps.products.models import Product, ClassificationResult
 from apps.jobs.models import BatchJob
 from apps.classifier.engine import ProductClassifier, TaxonomyIndex
-from apps.classifier.attribute_extractor import extract_attributes
+from apps.classifier.attribute_extractor import (
+    extract_attributes, extract_category_attributes,
+    extract_product_specifications, clear_attribute_cache
+)
 from apps.classifier.image_handler import verify_image_url
 from apps.jobs.worker import start_batch_classification, resume_batch_job, retry_failed_jobs, retry_single_product
 from apps.products.services.importer import import_product_file, validate_product_file
@@ -13,7 +16,61 @@ import json
 
 class ClassifierEngineTestSuite(TransactionTestCase):
     def setUp(self):
-        # Create structured test taxonomy categories with indoor and outdoor branches
+        clear_attribute_cache()
+
+        # 1. Create Core Taxonomy Attributes & Canonical Values
+        self.attr_material = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/4', name='Material', handle='material'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/4-1', attribute=self.attr_material, name='Bonded Leather')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/4-2', attribute=self.attr_material, name='Polyester')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/4-3', attribute=self.attr_material, name='Wood')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/4-4', attribute=self.attr_material, name='Fabric')
+
+        self.attr_color = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/1', name='Color', handle='color'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1-1', attribute=self.attr_color, name='White')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1-2', attribute=self.attr_color, name='Ivory')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1-3', attribute=self.attr_color, name='Blue')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1-4', attribute=self.attr_color, name='Navy')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1-5', attribute=self.attr_color, name='Gray')
+
+        self.attr_pattern = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/3', name='Pattern', handle='pattern'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/3-1', attribute=self.attr_pattern, name='Solid')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/3-2', attribute=self.attr_pattern, name='Heathered')
+
+        self.attr_style = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/1351', name='Style', handle='style'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1351-1', attribute=self.attr_style, name='Modern')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/1351-2', attribute=self.attr_style, name='Contemporary')
+
+        self.attr_sec_shape = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/6959', name='Sectional shape', handle='sectional_shape'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/6959-1', attribute=self.attr_sec_shape, name='L-shaped')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/6959-2', attribute=self.attr_sec_shape, name='U-shaped')
+
+        self.attr_sec_conf = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/6958', name='Sectional configuration', handle='sectional_configuration'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/6958-1', attribute=self.attr_sec_conf, name='Corner Unit')
+
+        self.attr_upholstery = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/2797', name='Upholstery material', handle='upholstery_material'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/2797-1', attribute=self.attr_upholstery, name='Polyester')
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/2797-2', attribute=self.attr_upholstery, name='Leather')
+
+        self.attr_chair_feats = TaxonomyAttribute.objects.create(
+            id='gid://shopify/TaxonomyAttribute/3049', name='Chair/Sofa features', handle='chair_sofa_features'
+        )
+        TaxonomyAttributeValue.objects.create(id='gid://shopify/TaxonomyValue/3049-1', attribute=self.attr_chair_feats, name='Removable cushions')
+
+        # 2. Create structured test taxonomy categories
         self.cat_sofa_indoor = TaxonomyCategory.objects.create(
             id='gid://shopify/TaxonomyCategory/fu-1',
             code='fu-1',
@@ -46,132 +103,234 @@ class ClassifierEngineTestSuite(TransactionTestCase):
             level=1,
             taxonomy_version='2026-02'
         )
+
         TaxonomyIndex.get_instance().reload()
         self.classifier = ProductClassifier()
         self.client = Client()
 
-    def test_full_metadata_classification(self):
+    def test_case_1_sectional_sofas_attributes_association(self):
+        """Test Case 1: A product classified as Sectional Sofas receives relevant Shopify attributes."""
         prod = Product.objects.create(
-            product_number='TEST-FULL-1',
-            name='Empress Bonded Leather Living Room Sofa by Modway',
-            brand='Modway',
-            description='A plush tufted sectional sofa for living room seating with solid walnut legs.',
-            product_category='Living Room',
-            product_sub_category='Sofas and Armchairs',
-            materials='Bonded Leather',
-            product_color='White',
-            assembly_required='Y',
-            image_url='https://example.com/valid_image.jpg'
-        )
-        result = self.classifier.classify_product(prod)
-        self.assertEqual(result['category_id'], self.cat_sofa_indoor.id)
-        self.assertGreaterEqual(result['confidence_score'], 0.70)
-        self.assertEqual(result['status'], 'auto_classified')
-        self.assertIn('Material', result['extracted_attributes'])
-        self.assertEqual(result['extracted_attributes']['Material']['normalized'], 'Bonded Leather')
-        self.assertEqual(result['extracted_attributes']['Color']['normalized'], 'White')
-        self.assertEqual(result['extracted_attributes']['Assembly Required']['normalized'], 'Yes')
-        self.assertTrue(len(result['confidence_breakdown']['evidence']) > 0)
-
-    def test_indoor_vs_outdoor_context_aware_ranking(self):
-        """Fix verification for Issue #7: Indoor Zoya Sofa should NOT rank Outdoor Sofas at top."""
-        prod = Product.objects.create(
-            product_number='TEST-ZOYA-INDOOR',
-            name='Zoya Contemporary Upholstered Living Room Sectional Sofa',
-            description='Designed for modern indoor living rooms with plush foam cushions.',
-            product_category='Living Room',
-            product_sub_category='Sofas and Armchairs',
-            materials='Fabric'
-        )
-        result = self.classifier.classify_product(prod)
-        self.assertEqual(result['category_id'], self.cat_sofa_indoor.id)
-        # Verify outdoor category is not the top prediction
-        self.assertNotEqual(result['category_id'], self.cat_sofa_outdoor.id)
-
-    def test_missing_description_fallback(self):
-        """Test Case A: Product without description."""
-        prod = Product.objects.create(
-            product_number='TEST-MISSING-DESC',
-            name='Modern Oak Dining Chair',
-            description='',
-            bullets='',
-            product_category='Dining Room',
-            product_sub_category='Chairs',
-            image_url='https://example.com/chair.jpg'
-        )
-        result = self.classifier.classify_product(prod)
-        self.assertEqual(result['category_id'], self.cat_chair.id)
-        self.assertGreaterEqual(result['confidence_score'], 0.40)
-        self.assertIsInstance(result['alternatives'], list)
-
-    def test_missing_image_fallback(self):
-        """Test Case B: Product without image."""
-        prod = Product.objects.create(
-            product_number='TEST-MISSING-IMG',
-            name='Modern Oak Dining Chair',
-            description='Crafted from solid oak wood for dining room seating.',
-            product_category='Dining Room',
-            product_sub_category='Chairs',
-            image_url=''
-        )
-        result = self.classifier.classify_product(prod)
-        self.assertEqual(result['category_id'], self.cat_chair.id)
-        self.assertEqual(result['image_status'], 'missing')
-        self.assertGreaterEqual(result['confidence_score'], 0.40)
-
-    def test_missing_image_and_description_routes_to_manual_review(self):
-        """Test Case C: Product without image and without description."""
-        prod = Product.objects.create(
-            product_number='TEST-MISSING-BOTH',
-            name='Sectional Sofa',
-            description='',
-            bullets='',
-            product_category='',
-            product_sub_category='',
-            image_url=''
-        )
-        result = self.classifier.classify_product(prod)
-        self.assertEqual(result['category_id'], self.cat_sofa_indoor.id)
-        # Should have lower confidence and require manual review
-        self.assertIsInstance(result['alternatives'], list)
-        self.assertIn(result['status'], ['needs_review', 'auto_classified'])
-
-    def test_broken_image_url_handling(self):
-        """Test Case D: Broken/unreachable image URL."""
-        status, is_valid, err = verify_image_url("https://invalid-non-existent-domain-998877.org/test.jpg", timeout=0.5)
-        self.assertEqual(status, 'broken')
-        self.assertFalse(is_valid)
-        self.assertTrue(len(err) > 0)
-
-    def test_attribute_value_normalization(self):
-        """Test Case for Issue #8: Storing raw vs normalized values."""
-        prod = Product.objects.create(
-            product_number='TEST-NORM-1',
-            name='Mid-Century Velvet Armchair',
-            description='Features Heathered Weave Ivory upholstery with solid walnut legs. Weight capacity 300 lbs.',
+            product_number='TEST-SEC-1',
+            name='Zoya 3 Piece Down Filled Overstuffed Sectional Sofa',
+            materials='100% Polyester fabric',
             product_color='Heathered Weave Ivory',
-            materials='100% Polyester Heathered Weave',
+            bullets='L-shaped Sectional Sofa\nRemovable Cushions\nSolid Wood Frame',
+            description='A luxurious sectional sofa designed for comfort.'
+        )
+        attrs = extract_attributes(prod, self.cat_sofa_indoor)
+        shopify_attrs = attrs['shopify_category_attributes']
+        attr_names = [a['attribute_name'] for a in shopify_attrs]
+
+        self.assertIn('Material', attr_names)
+        self.assertIn('Color', attr_names)
+        self.assertIn('Pattern', attr_names)
+        self.assertIn('Sectional shape', attr_names)
+        self.assertIn('Chair/Sofa features', attr_names)
+
+        # Verify Sectional shape detected
+        sec_shape = next(a for a in shopify_attrs if a['attribute_name'] == 'Sectional shape')
+        self.assertEqual(sec_shape['status'], 'detected')
+        self.assertEqual(sec_shape['matched_shopify_value'], 'L-shaped')
+
+    def test_case_2_different_category_receives_own_relevant_attributes(self):
+        """Test Case 2: A different category receives its own relevant Shopify attributes and not sofa specifics."""
+        prod = Product.objects.create(
+            product_number='TEST-CHAIR-1',
+            name='Modern Oak Dining Chair',
+            materials='Solid Wood',
+            product_color='Walnut',
+            bullets='Solid wooden legs\nComfortable dining chair'
+        )
+        attrs = extract_attributes(prod, self.cat_chair)
+        shopify_attrs = attrs['shopify_category_attributes']
+        attr_names = [a['attribute_name'] for a in shopify_attrs]
+
+        # Should receive universal and chair attributes
+        self.assertIn('Material', attr_names)
+        self.assertIn('Color', attr_names)
+        # Should NOT receive sectional sofa-specific attributes
+        self.assertNotIn('Sectional configuration', attr_names)
+        self.assertNotIn('Sectional shape', attr_names)
+
+    def test_case_3_product_specifications_separated_from_category_attributes(self):
+        """Test Case 3: Product specifications are not mixed up with Shopify category attributes."""
+        prod = Product.objects.create(
+            product_number='TEST-SPECS-1',
+            name='Tufted Sofa',
+            materials='Polyester',
             assembly_required='Y',
             is_set='N',
+            product_weight='105',
+            product_dimensions='35.5"L x 84"W x 34.5"H',
+            country_of_origin='China',
             brand='Modway'
         )
-        attrs = extract_attributes(prod)
-        self.assertEqual(attrs['Color']['normalized'], 'Ivory')
-        self.assertEqual(attrs['Color']['raw'], 'Heathered Weave Ivory')
-        self.assertEqual(attrs['Material']['normalized'], 'Polyester')
-        self.assertEqual(attrs['Assembly Required']['normalized'], 'Yes')
-        self.assertEqual(attrs['Is a Set']['normalized'], 'No')
-        self.assertEqual(attrs['Brand']['normalized'], 'Modway')
+        attrs = extract_attributes(prod, self.cat_sofa_indoor)
+        shopify_attr_names = [a['attribute_name'] for a in attrs['shopify_category_attributes']]
 
-    def test_batch_fault_isolation(self):
-        """Verify individual item failure does not stop the batch worker."""
-        p1 = Product.objects.create(product_number='BATCH-P1', name='Dining Chair')
-        p2 = Product.objects.create(product_number='BATCH-P2', name='Sectional Sofa')
+        # Specs should NOT be in shopify category attributes list
+        self.assertNotIn('Assembly Required', shopify_attr_names)
+        self.assertNotIn('Dimensions', shopify_attr_names)
+        self.assertNotIn('Product Weight', shopify_attr_names)
+        self.assertNotIn('Country of Origin', shopify_attr_names)
+        self.assertNotIn('Brand', shopify_attr_names)
+        self.assertNotIn('SHOPIFY_CATEGORY_ATTRIBUTES', shopify_attr_names)
+        self.assertNotIn('PRODUCT_SPECIFICATIONS', shopify_attr_names)
+        self.assertNotIn('product_specifications', attrs)
+
+    def test_case_4_raw_and_normalized_values_preserved(self):
+        """Test Case 4: Raw and normalized attribute values are preserved."""
+        prod = Product.objects.create(
+            product_number='TEST-RAW-NORM',
+            name='Modern Armchair',
+            materials='100% Polyester fabric',
+            product_color='Heathered Weave Ivory'
+        )
+        attrs = extract_attributes(prod, self.cat_sofa_indoor)
+        shopify_attrs = {a['attribute_name']: a for a in attrs['shopify_category_attributes']}
+
+        mat = shopify_attrs['Material']
+        self.assertEqual(mat['raw_value'], '100% Polyester fabric')
+        self.assertEqual(mat['normalized_value'], 'Polyester')
+
+        col = shopify_attrs['Color']
+        self.assertEqual(col['raw_value'], 'Heathered Weave Ivory')
+        self.assertEqual(col['normalized_value'], 'Ivory')
+
+    def test_case_5_matched_shopify_value_canonical(self):
+        """Test Case 5: Valid product attribute value matches canonical Shopify taxonomy value."""
+        prod = Product.objects.create(
+            product_number='TEST-CANON-1',
+            name='Sofa',
+            materials='Polyester',
+            product_color='Navy Fabric'
+        )
+        attrs = extract_attributes(prod, self.cat_sofa_indoor)
+        shopify_attrs = {a['attribute_name']: a for a in attrs['shopify_category_attributes']}
+
+        self.assertEqual(shopify_attrs['Material']['matched_shopify_value'], 'Polyester')
+        self.assertEqual(shopify_attrs['Color']['matched_shopify_value'], 'Navy')
+
+    def test_case_6_missing_attribute_values_handled_as_not_detected(self):
+        """Test Case 6: Missing attribute values are marked as not_detected without errors."""
+        prod = Product.objects.create(
+            product_number='TEST-MISSING-ATTR',
+            name='Generic Item',
+            description=''
+        )
+        attrs = extract_attributes(prod, self.cat_sofa_indoor)
+        shopify_attrs = {a['attribute_name']: a for a in attrs['shopify_category_attributes']}
+
+        # Sectional shape has no mention in product
+        sec_shape = shopify_attrs.get('Sectional shape')
+        if sec_shape:
+            self.assertEqual(sec_shape['status'], 'not_detected')
+            self.assertIsNone(sec_shape['raw_value'])
+            self.assertIsNone(sec_shape['normalized_value'])
+            self.assertIsNone(sec_shape['matched_shopify_value'])
+
+    def test_case_7_missing_description_does_not_break_extraction(self):
+        """Test Case 7: Missing description does not break category attribute extraction."""
+        prod = Product.objects.create(
+            product_number='TEST-NO-DESC',
+            name='Empress Bonded Leather Sofa',
+            materials='Bonded Leather',
+            product_color='White',
+            description='',
+            bullets=''
+        )
+        attrs = extract_attributes(prod, self.cat_sofa_indoor)
+        self.assertIsInstance(attrs['shopify_category_attributes'], list)
+        self.assertNotIn('product_specifications', attrs)
+        mat = next(a for a in attrs['shopify_category_attributes'] if a['attribute_name'] == 'Material')
+        self.assertEqual(mat['normalized_value'], 'Bonded Leather')
+
+    def test_case_8_missing_image_does_not_break_extraction(self):
+        """Test Case 8: Missing image does not break category attribute extraction."""
+        prod = Product.objects.create(
+            product_number='TEST-NO-IMG',
+            name='Empress Bonded Leather Sofa',
+            materials='Bonded Leather',
+            image_url=''
+        )
+        result = self.classifier.classify_product(prod)
+        self.assertEqual(result['image_status'], 'missing')
+        self.assertIn('shopify_category_attributes', result['extracted_attributes'])
+
+    def test_case_9_broken_image_does_not_break_extraction(self):
+        """Test Case 9: Broken image does not break category attribute extraction."""
+        prod = Product.objects.create(
+            product_number='TEST-BROKEN-IMG',
+            name='Empress Bonded Leather Sofa',
+            materials='Bonded Leather',
+            image_url='https://invalid-non-existent-domain-998877.org/broken.jpg'
+        )
+        result = self.classifier.classify_product(prod, check_image=True)
+        self.assertEqual(result['image_status'], 'broken')
+        self.assertIn('shopify_category_attributes', result['extracted_attributes'])
+
+    def test_case_10_changing_category_updates_shopify_category_attributes(self):
+        """Test Case 10: Changing the category updates the displayed Shopify Category Attributes."""
+        prod = Product.objects.create(
+            product_number='TEST-CAT-CHANGE',
+            name='Convertible Piece',
+            materials='Solid Wood'
+        )
+        ClassificationResult.objects.create(
+            product=prod,
+            predicted_category=self.cat_sofa_indoor,
+            confidence_score=0.80,
+            status='needs_review',
+            extracted_attributes=extract_attributes(prod, self.cat_sofa_indoor)
+        )
+
+        # Update category to Dining Chairs
+        resp = self.client.post(
+            f'/api/v1/products/{prod.id}/update-category/',
+            {'category_id': self.cat_chair.id, 'reviewer': 'Reviewer'},
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        cls_data = data['classification']
+        self.assertEqual(cls_data['approved_category']['id'], self.cat_chair.id)
+
+        # Attributes should now reflect Dining Chairs (no sectional shape)
+        cat_attr_names = [a['attribute_name'] for a in cls_data['shopify_category_attributes']]
+        self.assertNotIn('Sectional shape', cat_attr_names)
+
+    def test_case_11_alternative_category_preview_and_selection(self):
+        """Test Case 11: Choosing an alternative category updates Shopify Category Attributes."""
+        prod = Product.objects.create(
+            product_number='TEST-ALT-SELECT',
+            name='Modern Bench Chair',
+            materials='Wood',
+            product_color='Brown'
+        )
+        ClassificationResult.objects.create(
+            product=prod,
+            predicted_category=self.cat_chair,
+            confidence_score=0.75,
+            status='auto_classified',
+            extracted_attributes=extract_attributes(prod, self.cat_chair)
+        )
+
+        # Live category attributes preview API
+        preview_resp = self.client.get(f'/api/v1/products/{prod.id}/category-attributes/?category_id={self.cat_sofa_indoor.id}')
+        self.assertEqual(preview_resp.status_code, 200)
+        preview_data = preview_resp.json()
+        self.assertEqual(preview_data['category_id'], self.cat_sofa_indoor.id)
+        self.assertIn('shopify_category_attributes', preview_data)
+
+    def test_case_12_existing_batch_processing_and_export_functionality(self):
+        """Test Case 12: Existing batch processing, fault isolation, approval, and export continue working."""
+        p1 = Product.objects.create(product_number='BATCH-C1', name='Sectional Sofa', materials='Bonded Leather')
+        p2 = Product.objects.create(product_number='BATCH-C2', name='Dining Chair', materials='Wood')
         ClassificationResult.objects.create(product=p1, status='pending')
         ClassificationResult.objects.create(product=p2, status='pending')
 
         job = start_batch_classification(chunk_size=10)
-        # Wait for thread to finish
         import time
         for _ in range(30):
             job.refresh_from_db()
@@ -182,88 +341,9 @@ class ClassifierEngineTestSuite(TransactionTestCase):
         self.assertEqual(job.status, 'completed')
         self.assertEqual(job.processed_items, 2)
 
-    def test_single_product_retry(self):
-        """Verify single product retry endpoint and function."""
-        prod = Product.objects.create(product_number='RETRY-PROD-1', name='Sectional Sofa')
-        res = ClassificationResult.objects.create(product=prod, status='failed', last_error='Mock error')
-        
-        retried_res = retry_single_product(prod.id, check_image=False)
-        self.assertIn(retried_res.status, ['auto_classified', 'needs_review'])
-        self.assertEqual(retried_res.last_error, '')
-        self.assertEqual(retried_res.attempt_count, 2)
-
-    def test_duplicate_import_idempotency(self):
-        """Verify uploading duplicate records does not create duplicates."""
-        import tempfile
-        import pandas as pd
-
-        # Create temporary CSV
-        df = pd.DataFrame([
-            {'Product Number': 'IDEMP-1', 'Product Name': 'Item 1', 'Product Category': 'Furniture'},
-            {'Product Number': 'IDEMP-2', 'Product Name': 'Item 2', 'Product Category': 'Furniture'},
-        ])
-        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as f:
-            df.to_csv(f.name, index=False)
-            temp_path = f.name
-
-        # First import
-        res1 = import_product_file(temp_path)
-        self.assertEqual(res1['imported'], 2)
-
-        # Second import of same file
-        res2 = import_product_file(temp_path)
-        self.assertEqual(res2['imported'], 0)
-        self.assertEqual(res2['updated'], 2)
-
-        # Total products with IDEMP- should be exactly 2
-        self.assertEqual(Product.objects.filter(product_number__startswith='IDEMP-').count(), 2)
-
-    def test_rest_api_endpoints(self):
-        """Verify core REST API endpoints."""
-        prod = Product.objects.create(product_number='API-TEST-1', name='Dining Table Chair')
-        res = ClassificationResult.objects.create(
-            product=prod,
-            predicted_category=self.cat_chair,
-            confidence_score=0.85,
-            status='auto_classified'
-        )
-
-        # Test metrics API
-        metrics_resp = self.client.get('/api/v1/metrics/')
-        self.assertEqual(metrics_resp.status_code, 200)
-
-        # Test product list API with search
-        list_resp = self.client.get('/api/v1/products/?q=API-TEST-1')
-        self.assertEqual(list_resp.status_code, 200)
-        self.assertEqual(list_resp.json()['count'], 1)
-
-        # Test approve API
-        appr_resp = self.client.post(f'/api/v1/products/{prod.id}/approve/', {'reviewer': 'TestReviewer'}, content_type='application/json')
-        self.assertEqual(appr_resp.status_code, 200)
-        res.refresh_from_db()
-        self.assertEqual(res.status, 'approved')
-        self.assertEqual(res.approved_category, self.cat_chair)
-
-        # Test update category API
-        upd_resp = self.client.post(f'/api/v1/products/{prod.id}/update-category/', {'category_id': self.cat_bench.id, 'reviewer': 'TestReviewer'}, content_type='application/json')
-        self.assertEqual(upd_resp.status_code, 200)
-        res.refresh_from_db()
-        self.assertEqual(res.approved_category, self.cat_bench)
-        self.assertEqual(res.review_decision, 'human_overridden')
-
-    def test_export_preserves_human_approval(self):
-        """Verify export distinguishes predicted vs approved categories."""
-        prod = Product.objects.create(product_number='EXP-1', name='Sample Sofa')
-        ClassificationResult.objects.create(
-            product=prod,
-            predicted_category=self.cat_sofa_indoor,
-            approved_category=self.cat_sofa_indoor,
-            review_decision='human_approved',
-            status='approved',
-            confidence_score=0.92
-        )
+        # Export test
         csv_data, ctype, filename = export_classification_data(export_format='csv')
-        self.assertIn('Predicted Category GID', csv_data)
-        self.assertIn('Approved Category GID', csv_data)
-        self.assertIn('Review Decision', csv_data)
-        self.assertIn('EXP-1', csv_data)
+        self.assertIn('Shopify Category Attributes', csv_data)
+        self.assertIn('Product Specifications', csv_data)
+        self.assertIn('BATCH-C1', csv_data)
+

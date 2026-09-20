@@ -170,6 +170,16 @@ class ClassificationResult(models.Model):
     def is_review_required(self):
         return self.status == self.STATUS_NEEDS_REVIEW
 
+    @property
+    def shopify_category_attributes(self):
+        if self.product and self.effective_category:
+            from apps.classifier.attribute_extractor import extract_category_attributes
+            return extract_category_attributes(self.product, self.effective_category)
+        attrs = self.extracted_attributes or {}
+        if isinstance(attrs, dict) and 'shopify_category_attributes' in attrs:
+            return attrs['shopify_category_attributes']
+        return []
+
 
 class AuditLog(models.Model):
     """Maintains audit trail of all manual actions, review approvals, and category edits."""

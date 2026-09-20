@@ -56,17 +56,21 @@
     </div>
 
     <div style="background:rgba(0,0,0,0.25); padding:1rem; border-radius:var(--radius-md); margin-bottom:1.25rem;">
-      <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase;">
-        {{ classification.approved_category|yesno:"Approved Category,Predicted Category" }}
+      <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">
+        {{ classification.approved_category|yesno:"Approved Category (Human Verified),Predicted Category (AI)" }}
       </div>
-      <div style="font-size:1.15rem; font-weight:700; color:#fff; margin:0.2rem 0;">
+      <div style="font-size:1.25rem; font-weight:700; color:#fff; margin:0.2rem 0;">
         {{ classification.effective_category_name }}
       </div>
-      <div class="cat-breadcrumb">
+      <div class="cat-breadcrumb" style="margin-bottom:0.6rem;">
         {% for b in classification.effective_category.get_breadcrumbs %}
           <span class="cat-node {% if forloop.last %}leaf{% endif %}">{{ b }}</span>
           {% if not forloop.last %}<span class="cat-separator">›</span>{% endif %}
         {% endfor %}
+      </div>
+      <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(0,0,0,0.2); padding:0.4rem 0.75rem; border-radius:var(--radius-sm); width:fit-content; max-width:100%;">
+        <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600; text-transform:uppercase;">Shopify Category ID:</span>
+        <code style="font-size:0.8rem; color:#a5b4fc; font-family:var(--font-mono); word-break:break-all;">{{ classification.effective_category.id|default:"N/A" }}</code>
       </div>
     </div>
 
@@ -75,20 +79,67 @@
       <span style="font-size:1.25rem; font-weight:800; color:#fff;">{{ classification.confidence_percent }}%</span>
     </div>
 
-    <!-- Extracted Attributes -->
-    <h3 style="font-size:0.95rem; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.75rem;">Extracted Attributes (Normalized)</h3>
-    <div class="attr-grid">
-      {% for k, v in classification.extracted_attributes.items %}
-        <div class="attr-card">
-          <div class="attr-name">{{ k }} <span class="attr-norm-badge">Normalized</span></div>
-          <div class="attr-val">{{ v.normalized|default:v }}</div>
-          {% if v.raw and v.raw != v.normalized %}
-            <div class="attr-raw-tag">Raw: {{ v.raw }}</div>
-          {% endif %}
-        </div>
-      {% empty %}
-        <div style="color:var(--text-dim); font-size:0.85rem;">No attributes detected</div>
-      {% endfor %}
+    <!-- Shopify Category Attributes -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+      <div>
+        <h3 style="font-size:0.95rem; color:#fff; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin:0; display:flex; align-items:center; gap:0.5rem;">
+          <span style="color:var(--primary-color);">🏷️</span> SHOPIFY CATEGORY ATTRIBUTES
+        </h3>
+        <div style="font-size:0.75rem; color:#a5b4fc; margin-top:0.15rem;">Source: Shopify Product Taxonomy (data/categories.txt & data/attributes.txt)</div>
+      </div>
+      <span class="badge badge-info" style="font-size:0.75rem;">Category-Specific</span>
+    </div>
+    
+    <div style="background:rgba(99, 102, 241, 0.05); border:1px solid rgba(99, 102, 241, 0.2); border-radius:var(--radius-md); padding:0.75rem 1rem; margin-bottom:1rem;">
+      <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; font-weight:600; margin-bottom:0.25rem;">
+        Attributes defined for Category:
+      </div>
+      <div style="font-size:0.85rem; color:#e2e8f0; font-weight:500;">
+        {{ classification.effective_category_path }}
+      </div>
+    </div>
+
+    <div class="attr-grid" style="margin-bottom:1.5rem;">
+      {% if classification.shopify_category_attributes %}
+        {% for attr in classification.shopify_category_attributes %}
+          <div class="attr-card" style="background:rgba(255, 255, 255, 0.04); border-color:{% if attr.status == 'detected' %}rgba(99, 102, 241, 0.25){% else %}rgba(255, 255, 255, 0.06){% endif %};">
+            <div class="attr-name" style="color:#94a3b8; font-weight:600; font-size:0.75rem; display:flex; justify-content:space-between;">
+              {{ attr.attribute_name }}
+              {% if attr.status == 'detected' %}
+                {% if attr.matched_shopify_value %}
+                  <span class="attr-norm-badge" style="background:rgba(16,185,129,0.2); color:#34d399;">Canonical Shopify</span>
+                {% else %}
+                  <span class="attr-norm-badge" style="background:rgba(99,102,241,0.2); color:#a5b4fc;">Detected</span>
+                {% endif %}
+              {% else %}
+                <span style="font-size:0.65rem; color:var(--text-dim); background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px;">Not detected</span>
+              {% endif %}
+            </div>
+            <div class="attr-val" style="color:{% if attr.status == 'detected' %}#f8fafc{% else %}var(--text-dim){% endif %}; font-size:0.95rem; margin-top:0.35rem; font-style:{% if attr.status == 'detected' %}normal{% else %}italic{% endif %}; font-weight:{% if attr.status == 'detected' %}600{% else %}normal{% endif %};">
+              {% if attr.status == 'detected' %}
+                {{ attr.matched_shopify_value|default:attr.normalized_value|default:attr.raw_value }}
+              {% else %}
+                Not detected
+              {% endif %}
+            </div>
+            {% if attr.raw_value and attr.raw_value != attr.normalized_value and attr.raw_value != attr.matched_shopify_value %}
+              <div class="attr-raw-tag" style="margin-top:0.35rem; color:#94a3b8; font-size:0.75rem;">
+                <span style="color:#64748b;">Raw Extracted:</span> "{{ attr.raw_value }}"
+              </div>
+            {% endif %}
+            {% if attr.matched_shopify_value and attr.matched_shopify_value != attr.normalized_value %}
+              <div class="attr-raw-tag" style="margin-top:0.2rem; color:#34d399; font-size:0.75rem;">
+                <span style="color:#059669;">Matched Canonical:</span> {{ attr.matched_shopify_value }}
+              </div>
+            {% endif %}
+            <div style="margin-top:0.35rem; font-size:0.65rem; color:var(--text-dim); font-family:var(--font-mono);">
+              {{ attr.attribute_id }}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div style="color:var(--text-dim); font-size:0.85rem; padding:0.5rem 0;">No Shopify taxonomy attributes defined for this category.</div>
+      {% endif %}
     </div>
   </div>
   {% endif %}

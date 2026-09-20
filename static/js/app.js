@@ -41,8 +41,8 @@ function initDashboardMetrics() {
   const metricsContainer = document.getElementById('dashboard-metrics');
   if (!metricsContainer) return;
 
+  // Load metrics once on page load (polling only runs when a job is active)
   fetchMetrics();
-  setInterval(fetchMetrics, 3500);
 }
 
 async function fetchMetrics() {
@@ -72,6 +72,10 @@ async function fetchMetrics() {
 
     if (data.latest_job) {
       updateJobProgressUI(data.latest_job);
+      // Only start background polling if the job is actively running
+      if (data.latest_job.status === 'running' && !pollTimer) {
+        startPolling(data.latest_job.id);
+      }
     }
   } catch (err) {
     console.error("Failed to fetch metrics:", err);
@@ -173,18 +177,28 @@ function startPolling(jobId) {
       if (!res.ok) return;
       const job = await res.json();
       updateJobProgressUI(job);
+
+      // Live update KPI counters as chunks finish
+      if (job.processed_items !== undefined) {
+        updateElem('kpi-processed', (job.processed_items || 0).toLocaleString());
+        updateElem('kpi-auto-classified', (job.auto_classified_items || 0).toLocaleString());
+        updateElem('kpi-needs-review', (job.needs_review_items || 0).toLocaleString());
+        updateElem('kpi-failed', (job.failed_items || 0).toLocaleString());
+      }
+
       if (job.status === 'completed' || job.status === 'failed' || job.status === 'paused') {
         clearInterval(pollTimer);
+        pollTimer = null;
         fetchMetrics();
         if (job.status === 'completed') {
-          showToast("🎉 Batch processing completed for all items!", "success");
+          showToast("🎉 Batch classification completed 100% for all items!", "success");
           if (typeof loadProductsPage === 'function') loadProductsPage(currentPage);
         }
       }
     } catch (e) {
       console.error(e);
     }
-  }, 1200);
+  }, 600);
 }
 
 function updateJobProgressUI(job) {
@@ -197,11 +211,16 @@ function updateJobProgressUI(job) {
   const durationEl = document.getElementById('job-duration');
   const processedEl = document.getElementById('job-processed-stat');
 
-  if (progressFill) progressFill.style.width = `${job.progress_percentage}%`;
-  if (progressText) progressText.textContent = `${job.progress_percentage}%`;
+  const isCompleted = job.status === 'completed';
+  const pct = isCompleted ? 100 : (job.progress_percentage || 0);
+  const processedCount = isCompleted ? job.total_items : job.processed_items;
+  const currentChunk = isCompleted ? job.total_chunks : job.current_chunk;
+
+  if (progressFill) progressFill.style.width = `${pct}%`;
+  if (progressText) progressText.textContent = `${pct}%`;
   if (throughputEl) throughputEl.textContent = `${job.throughput_ips} items/sec`;
   if (durationEl) durationEl.textContent = `${job.duration_seconds}s`;
-  if (processedEl) processedEl.textContent = `${job.processed_items} / ${job.total_items} items (${job.current_chunk}/${job.total_chunks} chunks)`;
+  if (processedEl) processedEl.textContent = `${processedCount.toLocaleString()} / ${job.total_items.toLocaleString()} items (${currentChunk}/${job.total_chunks} chunks)`;
 
   if (typeBadge && job.batch_type) {
     typeBadge.style.display = 'inline-flex';
@@ -435,7 +454,6 @@ function renderProductDrawerContent(prod) {
   const evidenceList = breakdown.evidence || [];
   const signals = breakdown.signals || {};
   const alternatives = cls.alternatives || [];
-  const attributes = cls.extracted_attributes || {};
 
   const breadcrumbs = effCat ? effCat.breadcrumbs.map((b, i, arr) => 
     `<span class="cat-node ${i === arr.length - 1 ? 'leaf' : ''}">${b}</span>`
@@ -472,12 +490,16 @@ function renderProductDrawerContent(prod) {
           ${(cls.status || 'Pending').toUpperCase()}
         </span>
       </div>
-      <div style="font-size:1.05rem; font-weight:700; color:#fff; margin-bottom:0.4rem;">
+      <div style="font-size:1.15rem; font-weight:700; color:#fff; margin-bottom:0.3rem;">
         ${effCat ? effCat.name : 'Unclassified'}
       </div>
-      <div class="cat-breadcrumb">${breadcrumbs}</div>
+      <div class="cat-breadcrumb" style="margin-bottom:0.6rem;">${breadcrumbs}</div>
+      <div style="display:flex; align-items:center; gap:0.5rem; background:rgba(0,0,0,0.2); padding:0.4rem 0.75rem; border-radius:var(--radius-sm); width:fit-content; max-width:100%;">
+        <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600; text-transform:uppercase;">Shopify Category ID:</span>
+        <code style="font-size:0.8rem; color:#a5b4fc; font-family:var(--font-mono); word-break:break-all;">${effCat ? (effCat.id || 'N/A') : 'N/A'}</code>
+      </div>
 
-      <div style="margin-top:1rem; display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); padding:0.6rem 0.9rem; border-radius:var(--radius-md);">
+      <div style="margin-top:0.85rem; display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); padding:0.6rem 0.9rem; border-radius:var(--radius-md);">
         <span style="font-size:0.85rem; color:var(--text-muted);">Confidence Score</span>
         <div style="display:flex; align-items:center; gap:0.5rem;">
           <span style="font-weight:700; color:#fff; font-size:1.1rem;">${conf}%</span>
@@ -538,21 +560,80 @@ function renderProductDrawerContent(prod) {
       </div>
     </div>
 
-    <!-- Extracted Category Attributes (Normalized & Raw) -->
-    <div style="margin-bottom:1.25rem;">
-      <h4 style="font-size:0.85rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.6rem;">Extracted Category Attributes (Normalized)</h4>
-      <div class="attr-grid">
-        ${Object.keys(attributes).length > 0 ? Object.entries(attributes).map(([k, v]) => {
-          const normVal = typeof v === 'object' && v !== null ? (v.normalized || v.raw || '') : v;
-          const rawVal = typeof v === 'object' && v !== null ? v.raw : '';
-          return `
-            <div class="attr-card">
-              <div class="attr-name">${k} <span class="attr-norm-badge">Normalized</span></div>
-              <div class="attr-val">${normVal}</div>
-              ${rawVal && rawVal !== normVal ? `<div class="attr-raw-tag">Raw: ${rawVal}</div>` : ''}
-            </div>
-          `;
-        }).join('') : '<div style="color:var(--text-dim); font-size:0.85rem;">No attributes detected.</div>'}
+    <!-- Shopify Category Attributes (Source: Shopify Taxonomy) -->
+    <div class="card" style="margin-bottom:1.25rem; background:rgba(99, 102, 241, 0.04); border-color:rgba(99, 102, 241, 0.25);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+        <div>
+          <h4 style="font-size:0.95rem; color:#fff; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin:0; display:flex; align-items:center; gap:0.45rem;">
+            <span style="color:var(--primary-color);">🏷️</span> SHOPIFY CATEGORY ATTRIBUTES
+          </h4>
+          <div style="font-size:0.75rem; color:#a5b4fc; margin-top:0.15rem;">SHOPIFY STANDARD TAXONOMY</div>
+        </div>
+        <span class="badge badge-info" style="font-size:0.7rem; letter-spacing:0.02em;">Category-Specific</span>
+      </div>
+
+      <div style="background:rgba(0, 0, 0, 0.25); border:1px solid rgba(255, 255, 255, 0.08); border-radius:var(--radius-md); padding:0.6rem 0.85rem; margin-bottom:0.85rem;">
+        <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; font-weight:600; margin-bottom:0.15rem;">
+          CATEGORY CONTEXT
+        </div>
+        <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600;">
+          ${effCat ? (effCat.full_name || effCat.name) : 'Unclassified Category'}
+        </div>
+      </div>
+
+      <div class="attr-grid" id="drawer-shopify-attrs">
+        ${(() => {
+          const rawShopifyAttrs = cls.shopify_category_attributes || [];
+          const forbidden = new Set([
+            'SHOPIFY_CATEGORY_ATTRIBUTES', 'PRODUCT_SPECIFICATIONS',
+            'ASSEMBLY REQUIRED', 'WEIGHT CAPACITY', 'PRODUCT WEIGHT', 'DIMENSIONS',
+            'COUNTRY OF ORIGIN', 'COLLECTION', 'COLLECTION NAME', 'BRAND',
+            'MODEL NUMBER', 'SET INCLUDES', 'IS A SET'
+          ]);
+
+          const validAttrs = rawShopifyAttrs.filter(attr => {
+            if (!attr || !attr.attribute_name) return false;
+            const nameUpper = String(attr.attribute_name).toUpperCase().trim();
+            return !forbidden.has(nameUpper);
+          });
+
+          if (validAttrs.length > 0) {
+            return validAttrs.map(attr => {
+              const isDetected = attr.status === 'detected' || (attr.normalized_value || attr.raw_value || attr.matched_shopify_value);
+              const normVal = attr.normalized_value || attr.raw_value || 'Not detected';
+              const rawVal = attr.raw_value || '';
+              const matchedVal = attr.matched_shopify_value || '';
+              return `
+                <div class="attr-card" style="background:rgba(255, 255, 255, 0.04); border-color:${isDetected ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.06)'};">
+                  <div class="attr-name" style="color:#94a3b8; font-weight:600; font-size:0.75rem; display:flex; justify-content:space-between; align-items:center;">
+                    <span>${attr.attribute_name}</span>
+                    ${isDetected 
+                      ? (matchedVal ? `<span class="attr-norm-badge" style="background:rgba(16,185,129,0.2); color:#34d399;">Canonical</span>` : `<span class="attr-norm-badge" style="background:rgba(99,102,241,0.2); color:#a5b4fc;">Detected</span>`)
+                      : `<span style="font-size:0.65rem; color:var(--text-dim); background:rgba(255,255,255,0.05); padding:1px 5px; border-radius:3px;">Not detected</span>`}
+                  </div>
+                  <div class="attr-val" style="color:${isDetected ? '#f8fafc' : 'var(--text-dim)'}; font-size:0.95rem; margin-top:0.35rem; font-style:${isDetected ? 'normal' : 'italic'}; font-weight:${isDetected ? '600' : 'normal'};">
+                    ${isDetected ? (matchedVal || normVal) : 'Not detected'}
+                  </div>
+                  ${isDetected && rawVal && rawVal.toLowerCase() !== (matchedVal || normVal).toLowerCase() ? `
+                    <div class="attr-raw-tag" style="margin-top:0.35rem; color:#94a3b8; font-size:0.75rem;">
+                      <span style="color:#64748b;">Raw:</span> "${rawVal}"
+                    </div>
+                  ` : ''}
+                  ${isDetected && matchedVal && matchedVal.toLowerCase() !== normVal.toLowerCase() ? `
+                    <div class="attr-raw-tag" style="margin-top:0.2rem; color:#34d399; font-size:0.75rem;">
+                      <span style="color:#059669;">Matched:</span> ${matchedVal}
+                    </div>
+                  ` : ''}
+                  <div style="margin-top:0.35rem; font-size:0.65rem; color:var(--text-dim); font-family:var(--font-mono);">
+                    ${attr.attribute_id || ''}
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+
+          return '<div style="color:var(--text-dim); font-size:0.85rem; padding:0.5rem 0;">No Shopify taxonomy attributes defined for this category.</div>';
+        })()}
       </div>
     </div>
 
@@ -799,3 +880,33 @@ function initModals() {
     });
   }
 }
+
+// Global Export Dropdown Toggle
+function toggleExportMenu(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  const menu = document.getElementById('export-dropdown-menu');
+  const chevron = document.getElementById('export-chevron');
+  if (menu) {
+    const isShown = menu.style.display === 'flex';
+    menu.style.display = isShown ? 'none' : 'flex';
+    if (chevron) chevron.style.transform = isShown ? 'rotate(0deg)' : 'rotate(180deg)';
+  }
+}
+
+function closeExportMenu() {
+  const menu = document.getElementById('export-dropdown-menu');
+  const chevron = document.getElementById('export-chevron');
+  if (menu) menu.style.display = 'none';
+  if (chevron) chevron.style.transform = 'rotate(0deg)';
+}
+
+document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('export-dropdown');
+  if (dropdown && !dropdown.contains(e.target)) {
+    closeExportMenu();
+  }
+});
+

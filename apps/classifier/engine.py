@@ -285,8 +285,9 @@ class ProductClassifier:
             # 7. Extract & Normalize Category Attributes
             extracted_attrs = extract_attributes(product, top_cand['category'])
 
-            # 8. Determine Status
-            status = 'auto_classified' if final_conf >= self.confidence_threshold else 'needs_review'
+            # 8. Determine Status (70% / 0.70 and above is Auto Classified, below 70% is Needs Review)
+            final_conf = round(final_conf, 2)
+            status = 'auto_classified' if final_conf >= round(self.confidence_threshold, 2) else 'needs_review'
 
             return {
                 'category_id': top_cand['category'].id,

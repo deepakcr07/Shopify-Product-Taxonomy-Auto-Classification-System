@@ -59,6 +59,16 @@ class APITestCase(TestCase):
         data = resp.json()
         self.assertEqual(data['name'], 'Velvet Dining Chair')
         self.assertEqual(data['classification']['predicted_category']['name'], 'Dining Chairs')
+        self.assertIn('shopify_category_attributes', data['classification'])
+        self.assertNotIn('product_specifications', data['classification'])
+
+    def test_category_attributes_preview_api(self):
+        resp = self.client.get(f'/api/v1/products/{self.prod.id}/category-attributes/?category_id={self.alt_cat.id}')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['category_id'], self.alt_cat.id)
+        self.assertIn('shopify_category_attributes', data)
+        self.assertNotIn('product_specifications', data)
 
     def test_approve_product_api(self):
         resp = self.client.post(f'/api/v1/products/{self.prod.id}/approve/', {'reviewer': 'TestAdmin'})
@@ -77,6 +87,9 @@ class APITestCase(TestCase):
         self.assertEqual(self.classification.approved_category_id, self.alt_cat.id)
         self.assertEqual(self.classification.effective_category.id, self.alt_cat.id)
         self.assertEqual(self.classification.status, ClassificationResult.STATUS_APPROVED)
+        # Check re-extracted category attributes
+        data = resp.json()
+        self.assertIn('shopify_category_attributes', data['classification'])
 
     def test_taxonomy_search_api(self):
         resp = self.client.get('/api/v1/taxonomy/search/?q=Dining')
@@ -90,3 +103,4 @@ class APITestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('text/csv', resp['Content-Type'])
         self.assertIn('TEST-SKU-100', resp.content.decode('utf-8'))
+        self.assertIn('Shopify Category Attributes', resp.content.decode('utf-8'))

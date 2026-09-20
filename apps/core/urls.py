@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/v1/products/<int:pk>/', api_views.ProductDetailAPIView.as_view(), name='api_product_detail'),
     path('api/v1/products/<int:pk>/approve/', api_views.ApproveProductAPIView.as_view(), name='api_product_approve'),
     path('api/v1/products/<int:pk>/update-category/', api_views.UpdateProductCategoryAPIView.as_view(), name='api_product_update_category'),
+    path('api/v1/products/<int:pk>/category-attributes/', api_views.ProductCategoryAttributesAPIView.as_view(), name='api_product_category_attributes'),
     path('api/v1/products/<int:pk>/update-attributes/', api_views.UpdateProductAttributesAPIView.as_view(), name='api_product_update_attributes'),
     path('api/v1/products/<int:pk>/retry/', api_views.RetryProductAPIView.as_view(), name='api_product_retry'),
 

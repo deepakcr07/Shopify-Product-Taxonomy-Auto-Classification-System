@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="stylesheet" href="/static/css/styles.css?v=3.0">
   {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -30,7 +30,27 @@
 
     <div class="nav-actions">
       <button class="btn btn-secondary btn-sm" id="btn-open-upload">⬆ Import Catalogue (.xlsx / .csv)</button>
-      <a href="/api/v1/export/?format=csv" class="btn btn-primary btn-sm">⬇ Export CSV</a>
+      <div class="dropdown" id="export-dropdown" style="position:relative; display:inline-block;">
+        <button class="btn btn-primary btn-sm" id="btn-export-dropdown" onclick="toggleExportMenu(event)" style="display:inline-flex; align-items:center; gap:0.45rem; cursor:pointer;">
+          <span>⬇ Export Catalogue</span>
+          <span style="font-size:0.75rem; transition:transform 0.2s;" id="export-chevron">▾</span>
+        </button>
+        <div id="export-dropdown-menu" class="dropdown-menu" style="display:none; position:absolute; right:0; top:calc(100% + 8px); background:#111827; border:1px solid rgba(255,255,255,0.15); border-radius:12px; min-width:220px; box-shadow:0 20px 35px -5px rgba(0,0,0,0.7), 0 0 15px rgba(99,102,241,0.15); z-index:9999; overflow:hidden; flex-direction:column; padding:0.4rem 0;">
+          <div style="padding:0.4rem 1rem 0.3rem; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim);">Select Export Format</div>
+          <a href="/api/v1/export/?format=csv" class="dropdown-item" download="products_export.csv" style="display:flex; align-items:center; justify-content:space-between; padding:0.65rem 1rem; color:#f3f4f6; text-decoration:none; font-size:0.85rem; font-weight:500; transition:background 0.15s ease;" onmouseover="this.style.background='#1f2937'" onmouseout="this.style.background='transparent'" onclick="closeExportMenu()">
+            <span style="display:flex; align-items:center; gap:0.6rem;">📄 CSV File</span>
+            <span style="font-size:0.7rem; background:rgba(99,102,241,0.2); color:#a5b4fc; padding:0.15rem 0.45rem; border-radius:4px; font-weight:700;">.CSV</span>
+          </a>
+          <a href="/api/v1/export/?format=xlsx" class="dropdown-item" download="products_export.xlsx" style="display:flex; align-items:center; justify-content:space-between; padding:0.65rem 1rem; color:#f3f4f6; text-decoration:none; font-size:0.85rem; font-weight:500; border-top:1px solid rgba(255,255,255,0.06); transition:background 0.15s ease;" onmouseover="this.style.background='#1f2937'" onmouseout="this.style.background='transparent'" onclick="closeExportMenu()">
+            <span style="display:flex; align-items:center; gap:0.6rem;">📊 Excel Spreadsheet</span>
+            <span style="font-size:0.7rem; background:rgba(16,185,129,0.2); color:#6ee7b7; padding:0.15rem 0.45rem; border-radius:4px; font-weight:700;">.XLSX</span>
+          </a>
+          <a href="/api/v1/export/?format=json" class="dropdown-item" download="products_export.json" style="display:flex; align-items:center; justify-content:space-between; padding:0.65rem 1rem; color:#f3f4f6; text-decoration:none; font-size:0.85rem; font-weight:500; border-top:1px solid rgba(255,255,255,0.06); transition:background 0.15s ease;" onmouseover="this.style.background='#1f2937'" onmouseout="this.style.background='transparent'" onclick="closeExportMenu()">
+            <span style="display:flex; align-items:center; gap:0.6rem;">🏷️ JSON Document</span>
+            <span style="font-size:0.7rem; background:rgba(245,158,11,0.2); color:#fcd34d; padding:0.15rem 0.45rem; border-radius:4px; font-weight:700;">.JSON</span>
+          </a>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -79,7 +99,7 @@
   <div id="toast-container"></div>
 
   <!-- JavaScript Engine -->
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=3.0"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -208,6 +208,10 @@ class UpdateProductCategoryAPIView(APIView):
         result.reviewed_by = reviewer
         result.review_notes = notes
         result.reviewed_at = timezone.now()
+
+        # Re-extract category-relevant attributes for the newly selected category
+        from apps.classifier.attribute_extractor import extract_attributes
+        result.extracted_attributes = extract_attributes(product, category)
         result.save()
 
         AuditLog.objects.create(
@@ -226,6 +230,27 @@ class UpdateProductCategoryAPIView(APIView):
             'success': True,
             'message': f"Category updated to '{category.name}'",
             'classification': ClassificationResultSerializer(result).data
+        })
+
+
+class ProductCategoryAttributesAPIView(APIView):
+    """Returns category-relevant attributes & values for a product given any selected Shopify category."""
+    def get(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        category_id = request.GET.get('category_id')
+        if category_id:
+            category = get_object_or_404(TaxonomyCategory, pk=category_id)
+        else:
+            category = product.classification.effective_category if hasattr(product, 'classification') else None
+
+        from apps.classifier.attribute_extractor import extract_category_attributes
+        attrs = extract_category_attributes(product, category)
+        return Response({
+            'product_id': product.id,
+            'category_id': category.id if category else None,
+            'category_name': category.name if category else None,
+            'category_path': category.full_name if category else None,
+            'shopify_category_attributes': attrs,
         })
 
 

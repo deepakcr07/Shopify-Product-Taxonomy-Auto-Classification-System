@@ -23,6 +23,14 @@ def start_batch_classification(job_id=None, chunk_size=100, check_images=False, 
     """
     Spawns or resumes a background classification worker thread for a given BatchJob.
     """
+    # Prevent concurrent worker threads from colliding
+    for active_id, thread in list(_ACTIVE_WORKERS.items()):
+        if thread.is_alive():
+            active_job = BatchJob.objects.filter(id=active_id, status=BatchJob.STATUS_RUNNING).first()
+            if active_job:
+                logger.warning(f"BatchJob #{active_id} is already actively running. Returning existing job.")
+                return active_job
+
     if job_id:
         job = BatchJob.objects.get(id=job_id)
     else:
@@ -32,16 +40,28 @@ def start_batch_classification(job_id=None, chunk_size=100, check_images=False, 
             target_statuses.append(ClassificationResult.STATUS_FAILED)
 
         total_target = ClassificationResult.objects.filter(status__in=target_statuses).count()
-        total_chunks = math.ceil(total_target / chunk_size) if chunk_size > 0 else 1
+        
+        # If all items were already processed, reset them to pending for a live full re-classification run!
+        if total_target == 0:
+            ClassificationResult.objects.all().update(status=ClassificationResult.STATUS_PENDING)
+            total_target = ClassificationResult.objects.count()
+
+        total_chunks = math.ceil(total_target / max(1, chunk_size)) if total_target > 0 else 1
 
         job = BatchJob.objects.create(
             name=f"Classification Run #{BatchJob.objects.count() + 1}",
-            status=BatchJob.STATUS_PENDING,
+            status=BatchJob.STATUS_RUNNING,
             batch_type='retry' if retry_failed else 'full',
             total_items=total_target,
+            processed_items=0,
+            auto_classified_items=0,
+            needs_review_items=0,
+            failed_items=0,
             chunk_size=chunk_size,
+            current_chunk=0,
             total_chunks=total_chunks,
             check_images=check_images,
+            started_at=timezone.now(),
         )
 
     _PAUSE_FLAGS[job.id] = False
@@ -195,10 +215,16 @@ def _process_job_worker(job_id, is_retry=False):
             )
 
             if not pending_batch:
-                # All items finished
+                # All items finished - synchronize final exact counts from database
+                job.refresh_from_db()
                 job.status = BatchJob.STATUS_COMPLETED
                 job.completed_at = timezone.now()
-                job.save(update_fields=['status', 'completed_at'])
+                job.processed_items = job.total_items
+                job.current_chunk = job.total_chunks
+                job.auto_classified_items = ClassificationResult.objects.filter(status=ClassificationResult.STATUS_AUTO_CLASSIFIED).count()
+                job.needs_review_items = ClassificationResult.objects.filter(status=ClassificationResult.STATUS_NEEDS_REVIEW).count()
+                job.failed_items = ClassificationResult.objects.filter(status=ClassificationResult.STATUS_FAILED).count()
+                job.save()
                 logger.info(f"Job #{job_id} successfully completed all items.")
                 break
 
@@ -253,12 +279,16 @@ def _process_job_worker(job_id, is_retry=False):
                     batch_size=len(pending_batch)
                 )
 
-                # Update job progress metrics
+                # Update job progress metrics safely
+                job.refresh_from_db()
                 job.processed_items += len(pending_batch)
                 job.auto_classified_items += chunk_auto
                 job.needs_review_items += chunk_review
                 job.failed_items += chunk_failed
                 job.current_chunk += 1
+                if job.processed_items >= job.total_items:
+                    job.processed_items = job.total_items
+                    job.current_chunk = job.total_chunks
                 job.save()
 
     except Exception as e:

@@ -137,9 +137,9 @@ def calculate_confidence(
         'margin_bonus': round(margin_adjustment, 3),
         'completeness_factor': round(completeness_factor, 3),
         'raw_weighted_score': round(raw_weighted_score, 3),
-        'final_confidence': round(final_confidence, 3),
-        'final_percentage': f"{round(final_confidence * 100, 1)}%",
+        'final_confidence': round(final_confidence, 2),
+        'final_percentage': f"{int(round(final_confidence * 100))}%",
         'evidence': evidence
     }
 
-    return round(final_confidence, 4), breakdown
+    return round(final_confidence, 2), breakdown

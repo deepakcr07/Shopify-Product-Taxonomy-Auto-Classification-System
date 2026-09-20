@@ -49,7 +49,9 @@ class BatchJob(models.Model):
     def progress_percentage(self):
         if self.total_items == 0:
             return 0.0
-        return round((self.processed_items / self.total_items) * 100, 1)
+        if self.status == self.STATUS_COMPLETED:
+            return 100.0
+        return min(100.0, round((self.processed_items / self.total_items) * 100, 1))
 
     @property
     def is_active(self):
@@ -58,14 +60,17 @@ class BatchJob(models.Model):
     @property
     def duration_seconds(self):
         if not self.started_at:
-            return 0
+            return 0.0
         end_time = self.completed_at or timezone.now()
-        return round((end_time - self.started_at).total_seconds(), 1)
+        secs = (end_time - self.started_at).total_seconds()
+        return max(1.0, round(secs, 1)) if self.status == self.STATUS_COMPLETED and self.processed_items > 0 else max(0.0, round(secs, 1))
 
     @property
     def throughput_items_per_sec(self):
         dur = self.duration_seconds
-        if dur <= 0 or self.processed_items == 0:
+        if dur <= 0:
+            dur = 1.0
+        if self.processed_items == 0:
             return 0.0
         return round(self.processed_items / dur, 1)
 

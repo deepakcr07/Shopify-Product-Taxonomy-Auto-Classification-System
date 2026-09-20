@@ -20,16 +20,18 @@ class ClassificationResultSerializer(serializers.ModelSerializer):
     approved_category = TaxonomyCategorySerializer(read_only=True)
     effective_category = serializers.SerializerMethodField()
     confidence_percent = serializers.ReadOnlyField()
+    shopify_category_attributes = serializers.SerializerMethodField()
+    extracted_attributes = serializers.SerializerMethodField()
 
     class Meta:
         model = ClassificationResult
         fields = [
             'id', 'predicted_category', 'approved_category', 'effective_category',
             'confidence_score', 'confidence_percent', 'status', 'review_decision',
-            'alternatives', 'extracted_attributes', 'confidence_breakdown',
-            'image_status', 'taxonomy_version', 'classifier_version',
-            'attempt_count', 'last_error', 'reviewed_by', 'review_notes',
-            'error_log', 'processed_at', 'reviewed_at'
+            'alternatives', 'extracted_attributes', 'shopify_category_attributes',
+            'confidence_breakdown', 'image_status', 'taxonomy_version',
+            'classifier_version', 'attempt_count', 'last_error', 'reviewed_by',
+            'review_notes', 'error_log', 'processed_at', 'reviewed_at'
         ]
 
     def get_effective_category(self, obj):
@@ -42,6 +44,20 @@ class ClassificationResultSerializer(serializers.ModelSerializer):
             'full_name': cat.full_name,
             'code': cat.code,
             'breadcrumbs': cat.get_breadcrumbs()
+        }
+
+    def get_shopify_category_attributes(self, obj):
+        if obj.product and obj.effective_category:
+            from apps.classifier.attribute_extractor import extract_category_attributes
+            return extract_category_attributes(obj.product, obj.effective_category)
+        attrs = obj.extracted_attributes or {}
+        if isinstance(attrs, dict) and 'shopify_category_attributes' in attrs:
+            return attrs['shopify_category_attributes']
+        return []
+
+    def get_extracted_attributes(self, obj):
+        return {
+            'shopify_category_attributes': self.get_shopify_category_attributes(obj)
         }
 
 
